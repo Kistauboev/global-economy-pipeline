@@ -1,6 +1,7 @@
 import json
 import pandas as pd
 from pathlib import Path
+from uuid import uuid4
 from kafka import KafkaProducer
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -10,10 +11,16 @@ TOPIC = "global-economy"
 BOOTSTRAP_SERVERS = "localhost:9092"
 
 
-def produce_data(records=None):
+def produce_data(records=None, run_id=None):
+
+    if run_id is None:
+        run_id = str(uuid4())
+
     if records is None:
         df = pd.read_csv(DATA_PATH)
-        records = json.loads(df.to_json(orient="records"))
+        records = json.loads(
+            df.to_json(orient="records", double_precision=15)
+        )
 
     producer = None
     sent_count = 0
@@ -22,18 +29,28 @@ def produce_data(records=None):
         producer = KafkaProducer(
             bootstrap_servers=BOOTSTRAP_SERVERS,
             value_serializer=lambda value: json.dumps(
-                value, allow_nan=False
+                value,
+                allow_nan=False
             ).encode("utf-8"),
             acks="all",
             retries=3
         )
 
-        print("Connected to Kafka successfully")
+        print("Producer connected to Kafka")
+        print(f"Run ID: {run_id}")
 
         futures = []
 
         for record in records:
-            future = producer.send(TOPIC, value=record)
+
+            future = producer.send(
+                TOPIC,
+                value=record,
+                headers=[
+                    ("run_id", run_id.encode("utf-8"))
+                ]
+            )
+
             futures.append(future)
 
         producer.flush(timeout=60)
@@ -44,10 +61,10 @@ def produce_data(records=None):
 
         print(f"Published messages: {sent_count}")
 
-        return sent_count
+        return sent_count, run_id
 
-    except Exception as e:
-        print(f"Producer error: {e}")
+    except Exception as error:
+        print(f"Producer error: {error}")
         print(f"Confirmed messages: {sent_count}")
         raise
 
