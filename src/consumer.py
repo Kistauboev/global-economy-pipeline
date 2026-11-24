@@ -1,38 +1,49 @@
 import json
+import argparse
 import pandas as pd
-from pathlib import Path
 from kafka import KafkaConsumer
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-DATA_PATH = BASE_DIR / "data" / "raw_data.csv"
 
 TOPIC = "global-economy"
 BOOTSTRAP_SERVERS = "localhost:9092"
 
 
-def consume_data(expected_count=None):
-    if expected_count is None:
-        expected_count = len(pd.read_csv(DATA_PATH))
+def consume_data(expected_count, run_id):
 
     consumer = None
     records = []
 
+    if expected_count <= 0:
+        raise ValueError("Expected message count must be positive")
+
     try:
+
         consumer = KafkaConsumer(
             TOPIC,
             bootstrap_servers=BOOTSTRAP_SERVERS,
             auto_offset_reset="earliest",
             enable_auto_commit=False,
             group_id=None,
-            consumer_timeout_ms=15000,
+            consumer_timeout_ms=30000,
             value_deserializer=lambda value: json.loads(
                 value.decode("utf-8")
             )
         )
 
         print("Consumer connected to Kafka")
+        print(f"Run ID: {run_id}")
 
         for message in consumer:
+
+            headers = dict(message.headers)
+
+            message_run_id = headers.get("run_id")
+
+            if message_run_id is None:
+                continue
+
+            if message_run_id.decode("utf-8") != run_id:
+                continue
+
             records.append(message.value)
 
             if len(records) >= expected_count:
@@ -53,8 +64,8 @@ def consume_data(expected_count=None):
 
         return df
 
-    except Exception as e:
-        print(f"Consumer error: {e}")
+    except Exception as error:
+        print(f"Consumer error: {error}")
         raise
 
     finally:
@@ -63,4 +74,15 @@ def consume_data(expected_count=None):
 
 
 if __name__ == "__main__":
-    consume_data()
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("expected_count", type=int)
+    parser.add_argument("run_id")
+
+    args = parser.parse_args()
+
+    consume_data(
+        args.expected_count,
+        args.run_id
+    )
