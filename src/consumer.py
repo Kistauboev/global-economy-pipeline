@@ -6,7 +6,6 @@ from kafka import KafkaConsumer
 TOPIC = "global-economy"
 BOOTSTRAP_SERVERS = "localhost:9092"
 
-
 def consume_data(expected_count, run_id):
 
     consumer = None
